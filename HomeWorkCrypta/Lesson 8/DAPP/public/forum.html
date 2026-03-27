@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Forum DApp</title>
+    <script src="https://cdn.ethers.io/lib/ethers-5.7.2.umd.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: system-ui, sans-serif;
+            background: #0f0f12;
+            color: #e4e4e7;
+            min-height: 100vh;
+            padding: 2rem;
+        }
+        .container { max-width: 600px; margin: 0 auto; }
+        h1 { margin-bottom: 1rem; }
+        .subtitle { color: #888; margin-bottom: 2rem; }
+        button {
+            padding: 10px 20px;
+            font-size: 14px;
+            background: #6366f1;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+        button:hover { background: #5558e3; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .card {
+            background: #1a1a1e;
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+        }
+        input, textarea {
+            width: 100%;
+            padding: 10px;
+            margin: 8px 0;
+            background: #27272a;
+            border: 1px solid #3f3f46;
+            border-radius: 6px;
+            color: #fff;
+        }
+        .post {
+            background: #27272a;
+            padding: 1rem;
+            border-radius: 8px;
+            margin-top: 0.5rem;
+            border-left: 4px solid #6366f1;
+        }
+        .post-author { font-size: 12px; color: #888; margin-bottom: 4px; }
+        .config { margin-bottom: 1.5rem; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Forum DApp</h1>
+        <p class="subtitle">Децентралізований форум на Ethereum</p>
+
+        <div class="card config">
+            <label>Адреса контракту Forum:</label>
+            <input type="text" id="contractAddress" placeholder="0x... (завантажиться автоматично після deploy)">
+        </div>
+
+        <div class="card">
+            <p id="accountInfo">Не підключено</p>
+            <button id="connectBtn">Підключити MetaMask</button>
+        </div>
+
+        <div class="card">
+            <h3 style="margin-bottom: 0.5rem;">Новий пост</h3>
+            <textarea id="postMessage" rows="3" placeholder="Напишіть повідомлення..."></textarea>
+            <button id="createPostBtn" disabled>Опублікувати</button>
+        </div>
+
+        <div class="card">
+            <h3 style="margin-bottom: 0.5rem;">Пости</h3>
+            <button id="refreshBtn">Оновити</button>
+            <div id="postsList"></div>
+        </div>
+    </div>
+
+    <script>
+        const FORUM_ABI = [
+            "function create_post(string calldata message) external",
+            "function get_posts() external view returns(tuple(string message, address author, uint256 created_at, uint256 like)[])",
+            "function get_post(uint256 idx) external view returns(tuple(string message, address author, uint256 created_at, uint256 like))",
+            "function clear_posts() external",
+            "event PostCreated(address indexed author, uint256 created_at)"
+        ];
+
+        let provider, signer, forumContract, account;
+
+        const connectBtn = document.getElementById('connectBtn');
+        const createPostBtn = document.getElementById('createPostBtn');
+        const refreshBtn = document.getElementById('refreshBtn');
+        const accountInfo = document.getElementById('accountInfo');
+        const postsList = document.getElementById('postsList');
+        const contractInput = document.getElementById('contractAddress');
+
+        async function loadContractAddress() {
+            try {
+                const res = await fetch('/contract-addresses.json');
+                const data = await res.json();
+                if (data.forum) {
+                    contractInput.value = data.forum;
+                    return true;
+                }
+            } catch (e) {}
+            return false;
+        }
+
+        connectBtn.onclick = async () => {
+            if (!window.ethereum) {
+                alert('Встановіть MetaMask!');
+                return;
+            }
+            try {
+                const accounts = await ethereum.request({ method: 'eth_requestAccounts' });
+                account = accounts[0];
+                provider = new ethers.providers.Web3Provider(window.ethereum);
+                signer = provider.getSigner();
+                accountInfo.textContent = `Адреса: ${account.slice(0, 6)}...${account.slice(-4)}`;
+                connectBtn.textContent = 'Підключено';
+                connectBtn.disabled = true;
+                createPostBtn.disabled = false;
+                initContract();
+                if (contractInput.value.trim()) loadPosts();
+            } catch (err) {
+                console.error(err);
+            }
+        };
+
+        function initContract() {
+            const addr = document.getElementById('contractAddress').value.trim();
+            if (!addr) return;
+            forumContract = new ethers.Contract(addr, FORUM_ABI, signer);
+        }
+
+        createPostBtn.onclick = async () => {
+            const msg = document.getElementById('postMessage').value.trim();
+            if (!msg) return;
+            initContract();
+            if (!forumContract) {
+                alert('Введіть адресу контракту!');
+                return;
+            }
+            try {
+                createPostBtn.disabled = true;
+                const tx = await forumContract.create_post(msg);
+                await tx.wait();
+                document.getElementById('postMessage').value = '';
+                loadPosts();
+            } catch (err) {
+                alert(err.message);
+            }
+            createPostBtn.disabled = false;
+        };
+
+        async function loadPosts() {
+            const addr = document.getElementById('contractAddress').value.trim();
+            if (!addr) {
+                postsList.innerHTML = '<p style="color:#888">Введіть адресу контракту</p>';
+                return;
+            }
+            if (!provider) {
+                postsList.innerHTML = '<p style="color:#888">Підключіть MetaMask</p>';
+                return;
+            }
+            try {
+                const contract = new ethers.Contract(addr, FORUM_ABI, provider);
+                const posts = await contract.get_posts();
+                if (posts.length === 0) {
+                    postsList.innerHTML = '<p style="color:#888">Немає постів</p>';
+                    return;
+                }
+                postsList.innerHTML = posts.map((p, i) => `
+                    <div class="post">
+                        <div class="post-author">${p.author.slice(0, 6)}...${p.author.slice(-4)} · ${new Date(Number(p.created_at) * 1000).toLocaleString()}</div>
+                        <div>${escapeHtml(p.message)}</div>
+                    </div>
+                `).join('');
+            } catch (err) {
+                postsList.innerHTML = `<p style="color:#e11">Помилка: ${err.message}</p>`;
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        refreshBtn.onclick = loadPosts;
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            await loadContractAddress();
+        });
+
+        contractInput.addEventListener('change', () => { if (provider && contractInput.value.trim()) loadPosts(); });
+    </script>
+</body>
+</html>

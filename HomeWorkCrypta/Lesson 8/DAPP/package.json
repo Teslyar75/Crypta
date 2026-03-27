@@ -1,0 +1,28 @@
+{
+  "name": "crypta-dapp",
+  "version": "1.0.0",
+  "description": "DApp — децентралізований застосунок на базі Ethereum",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "node": "hardhat node",
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "deploy": "hardhat run scripts/deploy.js",
+    "deploy:forum": "hardhat run scripts/deploy-forum.js",
+    "deploy:counter": "hardhat run scripts/deploy-counter.js"
+  },
+  "dependencies": {
+    "ethers": "^6.13.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^6.1.2",
+    "@vitejs/plugin-react": "^4.3.4",
+    "hardhat": "^2.28.6",
+    "vite": "^6.0.3"
+  }
+}
